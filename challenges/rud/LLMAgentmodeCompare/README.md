@@ -57,8 +57,7 @@ index 55c2e24..a8ff7b6 100644
      }
 ```
 
-
-**GPT4.1 GHCP Visual Studio:**
+**Claude Sonnet 4 GHCP Visual Studio:**
 
 ```
 ❯ git show 86eae23c6b84f632f57c10b1127b26e73cf8e4fe
