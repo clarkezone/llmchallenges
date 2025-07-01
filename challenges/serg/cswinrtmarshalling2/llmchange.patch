@@ -1,0 +1,270 @@
+diff --git a/src/WinRT.Interop.Generator/Errors/WellKnownInteropExceptions.cs b/src/WinRT.Interop.Generator/Errors/WellKnownInteropExceptions.cs
+index 697df382..c904315b 100644
+--- a/src/WinRT.Interop.Generator/Errors/WellKnownInteropExceptions.cs
++++ b/src/WinRT.Interop.Generator/Errors/WellKnownInteropExceptions.cs
+@@ -136,6 +136,14 @@ internal static class WellKnownInteropExceptions
+         return Exception(15, $"Failed to discover generic type instantiations for module '{name}'.", exception);
+     }
+ 
++    /// <summary>
++    /// Failed to discover SZArray types.
++    /// </summary>
++    public static Exception DiscoverSzArrayTypesError(string? name, Exception exception)
++    {
++        return Exception(33, $"Failed to discover SZArray types for module '{name}'.", exception);
++    }
++
+     /// <summary>
+     /// Failed to discover generic type instantiations.
+     /// </summary>
+@@ -292,4 +300,3 @@ internal static class WellKnownInteropExceptions
+         return new WellKnownInteropException($"{ErrorPrefix}{id:0000}", message, innerException);
+     }
+ }
+-
+diff --git a/src/WinRT.Interop.Generator/Extensions/ModuleDefinitionExtensions.cs b/src/WinRT.Interop.Generator/Extensions/ModuleDefinitionExtensions.cs
+index 445df762..c95f0edb 100644
+--- a/src/WinRT.Interop.Generator/Extensions/ModuleDefinitionExtensions.cs
++++ b/src/WinRT.Interop.Generator/Extensions/ModuleDefinitionExtensions.cs
+@@ -22,16 +22,39 @@ internal static class ModuleDefinitionExtensions
+     /// <returns>All (unique) generic type signatures in the module.</returns>
+     public static IEnumerable<GenericInstanceTypeSignature> EnumerateGenericInstanceTypeSignatures(this ModuleDefinition module)
+     {
+-        HashSet<GenericInstanceTypeSignature> genericInstantiations = new(SignatureComparer.IgnoreVersion);
++        return module.EnumerateTypeSignatures(AllGenericTypesVisitor.Instance);
++    }
++
++    /// <summary>
++    /// Enumerates all SZArray type signatures in the module.
++    /// </summary>
++    /// <param name="module">The input <see cref="ModuleDefinition"/> instance.</param>
++    /// <returns>All (unique) SZArray type signatures in the module.</returns>
++    public static IEnumerable<SzArrayTypeSignature> EnumerateSzArrayTypeSignatures(this ModuleDefinition module)
++    {
++        return module.EnumerateTypeSignatures(AllSzArrayTypesVisitor.Instance);
++    }
++
++    /// <summary>
++    /// Generic method to enumerate type signatures using a visitor pattern.
++    /// </summary>
++    /// <typeparam name="T">The type of signature to enumerate.</typeparam>
++    /// <param name="module">The input <see cref="ModuleDefinition"/> instance.</param>
++    /// <param name="visitor">The visitor to use for extracting signatures.</param>
++    /// <returns>All (unique) type signatures of type T in the module.</returns>
++    private static IEnumerable<T> EnumerateTypeSignatures<T>(this ModuleDefinition module, ITypeSignatureVisitor<IEnumerable<T>> visitor)
++        where T : TypeSignature
++    {
++        HashSet<T> typeSignatures = new(SignatureComparer.IgnoreVersion);
+ 
+-        // Helper to crawl a signature, if generic
+-        static IEnumerable<GenericInstanceTypeSignature> EnumerateTypeSignatures(TypeSignature? type, HashSet<GenericInstanceTypeSignature> genericInstantiations)
++        // Helper to crawl a signature using the provided visitor
++        IEnumerable<T> EnumerateTypeSignaturesInternal(TypeSignature? type, HashSet<T> signatures)
+         {
+-            foreach (GenericInstanceTypeSignature genericType in (type as GenericInstanceTypeSignature)?.AcceptVisitor(AllGenericTypesVisitor.Instance) ?? [])
++            foreach (T foundType in type?.AcceptVisitor(visitor) ?? [])
+             {
+-                if (genericInstantiations.Add(genericType))
++                if (signatures.Add(foundType))
+                 {
+-                    yield return genericType;
++                    yield return foundType;
+                 }
+             }
+         }
+@@ -41,9 +64,9 @@ internal static class ModuleDefinitionExtensions
+         // base types (for generic types or not), as well as implemented (generic) interfaces.
+         foreach (TypeSpecification type in module.EnumerateTableMembers<TypeSpecification>(TableIndex.TypeSpec))
+         {
+-            foreach (GenericInstanceTypeSignature genericType in EnumerateTypeSignatures(type.Signature, genericInstantiations))
++            foreach (T foundType in EnumerateTypeSignaturesInternal(type.Signature, typeSignatures))
+             {
+-                yield return genericType;
++                yield return foundType;
+             }
+         }
+ 
+@@ -51,9 +74,9 @@ internal static class ModuleDefinitionExtensions
+         // without them appearing in the type specification table. This ensures that we're not missing those.
+         foreach (FieldDefinition field in module.EnumerateTableMembers<FieldDefinition>(TableIndex.Field))
+         {
+-            foreach (GenericInstanceTypeSignature genericType in EnumerateTypeSignatures(field.Signature?.FieldType, genericInstantiations))
++            foreach (T foundType in EnumerateTypeSignaturesInternal(field.Signature?.FieldType, typeSignatures))
+             {
+-                yield return genericType;
++                yield return foundType;
+             }
+         }
+ 
+@@ -61,26 +84,26 @@ internal static class ModuleDefinitionExtensions
+         foreach (MethodDefinition method in module.EnumerateTableMembers<MethodDefinition>(TableIndex.Method))
+         {
+             // Gather return type signatures
+-            foreach (GenericInstanceTypeSignature genericType in EnumerateTypeSignatures(method.Signature?.ReturnType, genericInstantiations))
++            foreach (T foundType in EnumerateTypeSignaturesInternal(method.Signature?.ReturnType, typeSignatures))
+             {
+-                yield return genericType;
++                yield return foundType;
+             }
+ 
+             // Walk all parameters as well
+             foreach (TypeSignature parameter in method.Signature?.ParameterTypes ?? [])
+             {
+-                foreach (GenericInstanceTypeSignature genericType in EnumerateTypeSignatures(parameter, genericInstantiations))
++                foreach (T foundType in EnumerateTypeSignaturesInternal(parameter, typeSignatures))
+                 {
+-                    yield return genericType;
++                    yield return foundType;
+                 }
+             }
+ 
+             // Also walk all declared locals, just in case
+             foreach (CilLocalVariable local in method.CilMethodBody?.LocalVariables ?? [])
+             {
+-                foreach (GenericInstanceTypeSignature genericType in EnumerateTypeSignatures(local.VariableType, genericInstantiations))
++                foreach (T foundType in EnumerateTypeSignaturesInternal(local.VariableType, typeSignatures))
+                 {
+-                    yield return genericType;
++                    yield return foundType;
+                 }
+             }
+         }
+@@ -98,26 +121,26 @@ internal static class ModuleDefinitionExtensions
+             GenericContext genericContext = new(specification.DeclaringType?.ToTypeSignature() as GenericInstanceTypeSignature, specification.Signature);
+ 
+             // Instantiate and gather the return type
+-            foreach (GenericInstanceTypeSignature genericType in EnumerateTypeSignatures(specification.Method!.Signature!.ReturnType.InstantiateGenericTypes(genericContext), genericInstantiations))
++            foreach (T foundType in EnumerateTypeSignaturesInternal(specification.Method!.Signature!.ReturnType.InstantiateGenericTypes(genericContext), typeSignatures))
+             {
+-                yield return genericType;
++                yield return foundType;
+             }
+ 
+             // Instantiate and gather all parameter types
+             foreach (TypeSignature parameterType in specification.Method!.Signature!.ParameterTypes)
+             {
+-                foreach (GenericInstanceTypeSignature genericType in EnumerateTypeSignatures(parameterType.InstantiateGenericTypes(genericContext), genericInstantiations))
++                foreach (T foundType in EnumerateTypeSignaturesInternal(parameterType.InstantiateGenericTypes(genericContext), typeSignatures))
+                 {
+-                    yield return genericType;
++                    yield return foundType;
+                 }
+             }
+ 
+             // And process locals as well
+             foreach (CilLocalVariable localVariable in specification.Method!.Resolve()?.CilMethodBody?.LocalVariables ?? [])
+             {
+-                foreach (GenericInstanceTypeSignature genericType in EnumerateTypeSignatures(localVariable.VariableType.InstantiateGenericTypes(genericContext), genericInstantiations))
++                foreach (T foundType in EnumerateTypeSignaturesInternal(localVariable.VariableType.InstantiateGenericTypes(genericContext), typeSignatures))
+                 {
+-                    yield return genericType;
++                    yield return foundType;
+                 }
+             }
+         }
+diff --git a/src/WinRT.Interop.Generator/Generation/InteropGenerator.Discover.cs b/src/WinRT.Interop.Generator/Generation/InteropGenerator.Discover.cs
+index dba978d8..7fb84285 100644
+--- a/src/WinRT.Interop.Generator/Generation/InteropGenerator.Discover.cs
++++ b/src/WinRT.Interop.Generator/Generation/InteropGenerator.Discover.cs
+@@ -110,6 +110,11 @@ internal partial class InteropGenerator
+ 
+         // Discover all generic type instantiations
+         DiscoverGenericTypeInstantiations(args, discoveryState, module);
++
++        args.Token.ThrowIfCancellationRequested();
++
++        // Discover all SZArray types
++        DiscoverSzArrayTypes(args, discoveryState, module);
+     }
+ 
+     /// <summary>
+@@ -261,4 +266,45 @@ internal partial class InteropGenerator
+             throw WellKnownInteropExceptions.DiscoverGenericTypeInstantiationsError(module.Name, e);
+         }
+     }
++
++    /// <summary>
++    /// Discovers all SZArray types in a given assembly.
++    /// </summary>
++    /// <param name="args">The arguments for this invocation.</param>
++    /// <param name="discoveryState">The discovery state for this invocation.</param>
++    /// <param name="module">The module currently being analyzed.</param>
++    private static void DiscoverSzArrayTypes(
++        InteropGeneratorArgs args,
++        InteropGeneratorDiscoveryState discoveryState,
++        ModuleDefinition module)
++    {
++        try
++        {
++            foreach (SzArrayTypeSignature arraySignature in module.EnumerateSzArrayTypeSignatures())
++            {
++                args.Token.ThrowIfCancellationRequested();
++
++                // Apply the same checks as in DiscoverGenericTypeInstantiations:
++                // We need to check if the array type is constructed (not a generic definition)
++                // and if it's fully resolvable (all dependencies are available)
++                if (!arraySignature.AcceptVisitor(IsConstructedGenericTypeVisitor.Instance))
++                {
++                    continue;
++                }
++
++                // Ignore types that are not fully resolvable (this likely means a .dll is missing)
++                if (!arraySignature.IsFullyResolvable)
++                {
++                    continue;
++                }
++
++                // Track this SZArray type for marshalling code generation
++                discoveryState.TrackSzArrayType(arraySignature);
++            }
++        }
++        catch (Exception e) when (!e.IsWellKnown)
++        {
++            throw WellKnownInteropExceptions.DiscoverSzArrayTypesError(module.Name, e);
++        }
++    }
+ }
+diff --git a/src/WinRT.Interop.Generator/Generation/InteropGeneratorDiscoveryState.cs b/src/WinRT.Interop.Generator/Generation/InteropGeneratorDiscoveryState.cs
+index c54931bf..2e1d692d 100644
+--- a/src/WinRT.Interop.Generator/Generation/InteropGeneratorDiscoveryState.cs
++++ b/src/WinRT.Interop.Generator/Generation/InteropGeneratorDiscoveryState.cs
+@@ -44,6 +44,9 @@ internal sealed class InteropGeneratorDiscoveryState
+     /// <summary>Backing field for <see cref="KeyValuePairTypes"/>.</summary>
+     private readonly ConcurrentDictionary<GenericInstanceTypeSignature, byte> _keyValuePairTypes = new(SignatureComparer.IgnoreVersion);
+ 
++    /// <summary>Backing field for <see cref="SzArrayTypes"/>.</summary>
++    private readonly ConcurrentDictionary<SzArrayTypeSignature, byte> _szArrayTypes = new(SignatureComparer.IgnoreVersion);
++
+     /// <summary>
+     /// Indicates whether the current state is readonly.
+     /// </summary>
+@@ -104,6 +107,11 @@ internal sealed class InteropGeneratorDiscoveryState
+     /// </summary>
+     public IReadOnlyCollection<GenericInstanceTypeSignature> KeyValuePairTypes => (IReadOnlyCollection<GenericInstanceTypeSignature>)_keyValuePairTypes.Keys;
+ 
++    /// <summary>
++    /// Gets all SZArray types.
++    /// </summary>
++    public IReadOnlyCollection<SzArrayTypeSignature> SzArrayTypes => (IReadOnlyCollection<SzArrayTypeSignature>)_szArrayTypes.Keys;
++
+     /// <summary>
+     /// Tracks a loaded module definition.
+     /// </summary>
+@@ -216,6 +224,17 @@ internal sealed class InteropGeneratorDiscoveryState
+         _ = _keyValuePairTypes.TryAdd(keyValuePairType, 0);
+     }
+ 
++    /// <summary>
++    /// Tracks an SZArray type.
++    /// </summary>
++    /// <param name="arrayType">The SZArray type.</param>
++    public void TrackSzArrayType(SzArrayTypeSignature arrayType)
++    {
++        ThrowIfReadOnly();
++
++        _ = _szArrayTypes.TryAdd(arrayType, 0);
++    }
++
+     /// <summary>
+     /// Marks the current state as readonly.
+     /// </summary>
