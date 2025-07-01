@@ -6,7 +6,7 @@ The problem is the very poor integration with VS, half of the time GitHub copilo
 -> Claude will chat a lot, suggest the solution in the Chat but will not edit the source file
 
 ## Test
-Take non-llm generated code, compare GPT and Claude results in agent mode in Visual Studio
+Take non-llm generated recursive fibonnaci code, prompt LLM to convert to an iterative approach, compare results of using GPT4.1 and Claude Sonnet 4 using agent mode in Visual Studio.
 
 ## Result
 Both Claude Sonnet 4 and ChatGPT 4.1 solved answered the prompt correctly.  Claim disproved :-)

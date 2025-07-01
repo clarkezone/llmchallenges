@@ -10,7 +10,7 @@ It also made up a bunch of APIs that it used that don't even exist 🙃
 
 ## Agent Transcript
 
- For more details, see [cline_task_jun-26](https://github.com/your-repo/cline_task_jun-26).
+For more details, see [cline_task_jun-26-2025_2-17-23-pm.md](cline_task_jun-26-2025_2-17-23-pm.md).
 
  ## Result
 
