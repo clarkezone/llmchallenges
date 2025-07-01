@@ -1,4 +1,7 @@
-﻿// Vibonacci non-LLM generated from: https://dotnettutorials.net/lesson/fibonacci-series-in-csharp/
+﻿// Fibonacci non-LLM generated from: https://dotnettutorials.net/lesson/fibonacci-series-in-csharp/
+
+// Transform to iterative using GHCP in VS with agent mode and GPT-4.1
+// Prompt: "rewrite the recursive FibonacciSeries funciton using an iterative approach"
 
 using System;
 namespace LogicalPrograms
@@ -14,10 +17,14 @@ namespace LogicalPrograms
         }
         public static void FibonacciSeries(int firstNumber, int secondNumber, int counter, int number)
         {
-            Console.Write(firstNumber + " ");
-            if (counter < number)
+            // Iterative approach to print Fibonacci series
+            int a = firstNumber, b = secondNumber;
+            for (int i = 1; i <= number; i++)
             {
-                FibonacciSeries(secondNumber, firstNumber + secondNumber, counter + 1, number);
+                Console.Write(a + " ");
+                int temp = a + b;
+                a = b;
+                b = temp;
             }
         }
     }
